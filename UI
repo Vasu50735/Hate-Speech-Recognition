@@ -1,0 +1,73 @@
+
+# ======================= IMPORTS =======================
+import streamlit as st
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+import re
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+# ================== LOAD MODEL =========================
+model = load_model('/Users/Vasudev/Desktop/hate_speech_model.h5')
+
+# Show success message on load
+st.success("✅ Model loaded successfully!")
+
+# ================== LOAD DATASET =======================
+dataset = pd.read_csv("/Users/Vasudev/Desktop/labeled_data.csv", index_col=0)
+
+# ================== CLEAN FUNCTION =====================
+def clean_tweet(text):
+    text = text.lower()
+    text = re.sub(r"http\S+", "", text)        # remove URLs
+    text = re.sub(r"@\w+", "", text)           # remove mentions
+    text = re.sub(r"[!?]+", "", text)          # remove ! and ?
+    text = re.sub(r"\s+", " ", text).strip()   # remove extra spaces
+    return text
+
+# ================== PREPROCESS TWEETS ==================
+dataset["clean_tweet"] = dataset["tweet"].apply(clean_tweet)
+
+# ================== TOKENIZER SETUP ====================
+tokenizer = Tokenizer(num_words=200, oov_token="<OOV>")
+tokenizer.fit_on_texts(dataset["clean_tweet"])
+
+# ================== LABEL MAP ==========================
+label_map = {
+    0: "Hate Speech",
+    1: "Offensive Language",
+    2: "Neither"
+}
+
+# ================== PREDICTION FUNCTION ===============
+def predict_tweet(tweet):
+    cleaned = clean_tweet(tweet)
+    sequence = tokenizer.texts_to_sequences([cleaned])
+    padded = pad_sequences(sequence, maxlen=100, padding='post')
+    prediction = model.predict(padded)[0]
+
+    class_index = np.argmax(prediction)
+    label = label_map[class_index]
+    confidence = prediction[class_index]
+
+    return label, confidence, prediction
+
+# ================== STREAMLIT UI =======================
+st.title("🧠 Hate Speech Classifier")
+st.write("Enter a tweet and see how the model classifies it.")
+
+tweet = st.text_area("✍️ Input your tweet here:")
+
+if st.button("Predict"):
+    if tweet.strip() == "":
+        st.warning("Please enter a tweet first.")
+    else:
+        label, confidence, probs = predict_tweet(tweet)
+        st.markdown(f"### 🔍 Prediction: **{label}**")
+        st.markdown(f"### 📊 Confidence: `{confidence:.2%}`")
+        
+        st.markdown("#### 🧪 Full Class Probabilities:")
+        for i, prob in enumerate(probs):
+            st.write(f"{label_map[i]}: {prob:.2%}")
